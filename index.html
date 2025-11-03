@@ -1,0 +1,209 @@
+<!--
+AI Mood Detection - Frontend (single-file HTML)
+Features:
+- Responsive, accessible UI
+- Text input and optional image upload (for future image-based model)
+- Sends POST /api/mood with JSON { text }
+- Shows mood label, emoji, confidence, explanations, and history
+- Includes a mock local fallback so the page works without a backend
+
+To use with a real backend: implement POST /api/mood that accepts JSON { text: string }
+and returns JSON { mood: string, confidence: 0-1, explanation?: string }
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Mood Detection — Frontend</title>
+  <!-- Tailwind via CDN for quick styling (production: build your own) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* small custom tweaks */
+    .glass { background: rgba(255,255,255,0.6); backdrop-filter: blur(6px); }
+    .pulse-emoji { animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 font-sans text-slate-800">
+  <main class="max-w-3xl mx-auto p-6">
+    <header class="mb-6 text-center">
+      <h1 class="text-3xl font-extrabold tracking-tight">AI Mood Detection</h1>
+      <p class="mt-2 text-sm text-slate-600">Enter text (or upload an image) and the model will predict the user's mood.</p>
+    </header>
+
+    <section class="glass rounded-2xl p-6 shadow-lg">
+      <form id="moodForm" class="space-y-4" onsubmit="return false;">
+        <label class="block">
+          <span class="text-sm font-medium">Type a message</span>
+          <textarea id="textInput" rows="4" class="mt-2 w-full rounded-lg border p-3 focus:outline-none focus:ring-2 focus:ring-indigo-300" placeholder="e.g. I'm feeling a bit overwhelmed today..."></textarea>
+        </label>
+
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="useMock" type="checkbox" checked class="h-4 w-4 text-indigo-600" />
+            <span class="text-sm text-slate-600">Use local mock model (no backend)</span>
+          </label>
+
+          <button id="detectBtn" class="ml-auto inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            Detect Mood
+          </button>
+        </div>
+
+        <div class="pt-2">
+          <label class="text-sm font-medium">Optional: Upload an image (future feature)</label>
+          <input id="imageInput" type="file" accept="image/*" class="mt-2 block w-full text-sm text-slate-600" />
+        </div>
+      </form>
+
+      <div id="resultCard" class="mt-6 hidden rounded-xl border p-4">
+        <div class="flex items-center gap-4">
+          <div id="emoji" class="text-5xl">🙂</div>
+          <div>
+            <div id="moodLabel" class="text-xl font-semibold">Mood</div>
+            <div id="confidence" class="text-sm text-slate-600">Confidence: 0%</div>
+          </div>
+        </div>
+
+        <div id="explanation" class="mt-4 text-sm text-slate-700"></div>
+      </div>
+
+      <div id="historyCard" class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-700">History</h3>
+        <ul id="historyList" class="mt-2 space-y-2 text-sm text-slate-700"></ul>
+      </div>
+
+    </section>
+
+    <footer class="mt-4 text-center text-xs text-slate-500">Tip: Hook <code>/api/mood</code> to a server that runs your model. Response shape expected: <code>{ mood: string, confidence: number, explanation?: string }</code></footer>
+  </main>
+
+  <script>
+    // UI helpers
+    const moodForm = document.getElementById('moodForm');
+    const textInput = document.getElementById('textInput');
+    const detectBtn = document.getElementById('detectBtn');
+    const useMock = document.getElementById('useMock');
+    const resultCard = document.getElementById('resultCard');
+    const moodLabel = document.getElementById('moodLabel');
+    const confidenceEl = document.getElementById('confidence');
+    const explanationEl = document.getElementById('explanation');
+    const emojiEl = document.getElementById('emoji');
+    const historyList = document.getElementById('historyList');
+
+    // Keep a small in-memory history
+    const history = [];
+
+    function emojiForMood(mood) {
+      const map = {
+        happy: '😄',
+        sad: '😢',
+        angry: '😠',
+        neutral: '😐',
+        anxious: '😰',
+        excited: '🤩',
+        surprised: '😲',
+        bored: '😴',
+        calm: '😌'
+      };
+      return map[mood.toLowerCase()] || '🙂';
+    }
+
+    function showResult({mood, confidence, explanation}){
+      moodLabel.textContent = mood.charAt(0).toUpperCase() + mood.slice(1);
+      confidenceEl.textContent = `Confidence: ${(confidence*100).toFixed(0)}%`;
+      explanationEl.textContent = explanation || '';
+      emojiEl.textContent = emojiForMood(mood);
+      emojiEl.classList.add('pulse-emoji');
+      resultCard.classList.remove('hidden');
+
+      // push to history and render
+      const ts = new Date().toLocaleString();
+      history.unshift({mood, confidence, ts});
+      renderHistory();
+    }
+
+    function renderHistory(){
+      historyList.innerHTML = '';
+      history.slice(0,8).forEach(h => {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between items-center rounded-md p-2 bg-white/70 border';
+        li.innerHTML = `<div class="flex items-center gap-3"><div class="text-2xl">${emojiForMood(h.mood)}</div><div><div class="font-medium">${h.mood.charAt(0).toUpperCase()+h.mood.slice(1)}</div><div class="text-xs text-slate-500">${(h.confidence*100).toFixed(0)}% confidence</div></div></div><div class="text-xs text-slate-500">${h.ts}</div>`;
+        historyList.appendChild(li);
+      });
+    }
+
+    // Basic mock classifier (for demo only)
+    function localMockPredict(text){
+      const t = text.toLowerCase();
+      if(!t.trim()) return { mood: 'neutral', confidence: 0.5, explanation: 'No text provided, defaulting to neutral.' };
+      const rules = [
+        {k: ['happy','great','good','awesome','love','yay','glad'], m: 'happy'},
+        {k: ['sad','down','unhappy','depressed','cry'], m: 'sad'},
+        {k: ['angry','furious','mad','hate'], m: 'angry'},
+        {k: ['anxious','anxiety','nervous','worried'], m: 'anxious'},
+        {k: ['excited','stoked','thrilled'], m: 'excited'},
+        {k: ['bored','meh','boredom'], m: 'bored'},
+      ];
+      for(const r of rules){
+        for(const kw of r.k){
+          if(t.includes(kw)) return { mood: r.m, confidence: 0.85, explanation: `Detected keyword: "${kw}"` };
+        }
+      }
+      // fallback: neutral with lower confidence
+      return { mood: 'neutral', confidence: 0.55, explanation: 'Could not detect a clear mood.' };
+    }
+
+    async function callBackendPredict(text){
+      // Example: POST to /api/mood
+      const res = await fetch('/api/mood', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      if(!res.ok) throw new Error('Server error ' + res.status);
+      const j = await res.json();
+      // expected: { mood: string, confidence: number (0-1), explanation?: string }
+      if(typeof j.confidence === 'number') return j;
+      // try to normalize
+      return { mood: j.mood || 'neutral', confidence: Number(j.confidence) || 0.6, explanation: j.explanation };
+    }
+
+    detectBtn.addEventListener('click', async () => {
+      detectBtn.setAttribute('disabled', '');
+      detectBtn.textContent = 'Detecting...';
+      const text = textInput.value || '';
+
+      try {
+        let out;
+        if(useMock.checked){
+          // local mock
+          await new Promise(r => setTimeout(r, 300));
+          out = localMockPredict(text);
+        } else {
+          // call backend - wrap in try/catch
+          out = await callBackendPredict(text);
+        }
+        showResult(out);
+      } catch(err){
+        // show error to user in explanation area
+        showResult({ mood: 'neutral', confidence: 0.4, explanation: 'Error: ' + err.message });
+      } finally {
+        detectBtn.removeAttribute('disabled');
+        detectBtn.innerHTML = 'Detect Mood';
+      }
+    });
+
+    // Allow Enter+Ctrl to submit quickly
+    textInput.addEventListener('keydown', (e) => {
+      if((e.key === 'Enter' && (e.ctrlKey || e.metaKey))){
+        detectBtn.click();
+      }
+    });
+
+    // Accessibility: focus trap for keyboard users when result appears
+    resultCard.addEventListener('animationend', ()=>{});
+  </script>
+</body>
+</html>
